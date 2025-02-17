@@ -17,212 +17,241 @@ from porter_stemmer import PorterStemmer
 STOP_WORDS = set(get_stopwords("en"))
 STEMMER = PorterStemmer()
 
-def preprocess(text, doc_id = None, verbose = 0):
+
+def preprocess(text, doc_id, verbose=0):
     """Clean, tokenize, filter, and stem raw text."""
+    if verbose >= 2:
+        print(f"[preprocess][L2] Starting preprocessing for '{doc_id}'.")
+    
     tokens_unfiltered = tokenizeText(text)
-    if (verbose >= 2):
-        print(f'tokenized {doc_id}')
+    if verbose >= 3:
+        print(f"[preprocess][L3] {doc_id}: Tokenized into {len(tokens_unfiltered)} tokens.")
+    if verbose >= 4:
+        print(f"[preprocess][L4] {doc_id}: Unfiltered tokens: {tokens_unfiltered}")
 
     tokens_unstemmed = [word for word in tokens_unfiltered if word not in STOP_WORDS]
-    if (verbose >= 2):
-        print(f'removed stop words from {doc_id}')
+    if verbose >= 3:
+        print(f"[preprocess][L3] {doc_id}: Removed stop words; {len(tokens_unstemmed)} tokens remain.")
+    if verbose >= 4:
+        print(f"[preprocess][L4] {doc_id}: Tokens after stop word removal: {tokens_unstemmed}")
 
-    tokens = [STEMMER.stem(word) for word in tokens_unstemmed]
-    if (verbose >= 2):
-        print(f'stemmed {doc_id}')
+    # Note: assuming the stemmer's stem method takes parameters as shown.
+    tokens = [STEMMER.stem(word, 0, max(len(word) - 1, 0)) for word in tokens_unstemmed]
+    if verbose >= 3:
+        print(f"[preprocess][L3] {doc_id}: Stemming complete.")
+    if verbose >= 4:
+        print(f"[preprocess][L4] {doc_id}: Stemmed tokens: {tokens}")
     
     return tokens
 
 
-def add_tf_idf(tokens, inv_idx, doc_id, verbose = 0):
+def add_tf_idf(tokens, inv_idx, doc_id, verbose=0):
+    """Add tokens to the inverted index, updating term frequencies."""
+    if verbose >= 2:
+        print(f"[add_tf_idf][L2] Adding tokens for document '{doc_id}'.")
     for token in tokens:
-        if token in inv_idx:
-            inv_idx[token][doc_id] += 1
-        else:
-            inv_idx[token] = {doc_id: 1}
+        if token not in inv_idx:
+            inv_idx[token] = {}
+            if verbose >= 4:
+                print(f"[add_tf_idf][L4] New token '{token}' added to index.")
+        if doc_id not in inv_idx[token]:
+            inv_idx[token][doc_id] = 0
+            if verbose >= 4:
+                print(f"[add_tf_idf][L4] Initializing count for token '{token}' in doc '{doc_id}'.")
+        inv_idx[token][doc_id] += 1
+        if verbose >= 4:
+            print(f"[add_tf_idf][L4] Token '{token}' in doc '{doc_id}' count: {inv_idx[token][doc_id]}.")
 
-    return inv_idx
 
-
-def indexDocument(doc_id, dw_mode, qw_mode, inv_idx, verbose = 0):
+def indexDocument(doc_filepath, dw_mode, qw_mode, inv_idx, verbose=0):
     """Add a document to the inverted index."""
-    # ==================================================
-    # STEP ONE: open file
-    doc_path = Path(doc_id)
+    doc_path = Path(doc_filepath)
+    doc_id = doc_path.name
     if not doc_path.is_file():
-        raise(FileNotFoundError(f'could not find file {doc_id}'))
+        raise FileNotFoundError(f"Could not find file {doc_id}")
+    
+    if verbose >= 2:
+        print(f"[indexDocument][L2] Indexing document '{doc_id}'.")
     
     with doc_path.open("r", encoding="ISO-8859-1") as doc:
-        if (verbose >= 2):
-            print(f'opened {doc_id}')
-    # ==================================================
-    # STEP TWO: preprocess (clean, tokenize, and stem)
+        if verbose >= 3:
+            print(f"[indexDocument][L3] Opened file '{doc_id}'.")
         doc_text_raw = doc.read()
-
+        if verbose >= 4:
+            print(f"[indexDocument][L4] Read {len(doc_text_raw)} characters from '{doc_id}'.")
         tokens = preprocess(doc_text_raw, doc_id, verbose)
+        if verbose >= 3:
+            print(f"[indexDocument][L3] Preprocessing complete for '{doc_id}'; {len(tokens)} tokens obtained.")
         
-    # ==================================================
-    # STEP THREE: add tokens to inverted index
-    if (dw_mode == 'tf.idf'):
-        inv_idx = add_tf_idf(tokens, inv_idx, doc_id, verbose)
-    else:
-        raise(ValueError(f'unimplemented mode(s): d: {dw_mode} q: {qw_mode}'))
-
-    return inv_idx
+        if dw_mode == 'tf.idf':
+            add_tf_idf(tokens, inv_idx, doc_id, verbose)
+            if verbose >= 3:
+                print(f"[indexDocument][L3] Tokens added to the inverted index for '{doc_id}'.")
+        else:
+            raise ValueError(f"Unimplemented mode(s): d: {dw_mode} q: {qw_mode}")
 
 
-def construct_tf_idf(inv_idx, N, cos_norm=True, verbose=0):
+def construct_tf_idf(inv_idx, N, cos_norm=False, verbose=0):
+    """Construct TF-IDF weights from the inverted index."""
+    if verbose >= 2:
+        print("[construct_tf_idf][L2] Constructing TF-IDF weights.")
+    
     tf_idf = {}
     idf = {}
     doc_norms = {}
 
-    for term, docs in inv_idx.items():  # Iterate correctly over dictionary
+    for term, docs in inv_idx.items():
         df_t = len(docs)
-        idf_t = np.log10(N / df_t)  # Compute IDF
+        idf_t = np.log10(N / df_t)
         idf[term] = idf_t
-        
-        if verbose >= 1:
-            print(f'Processed {term}: IDF = {idf_t}')
+        if verbose >= 3:
+            print(f"[construct_tf_idf][L3] Term '{term}': DF = {df_t}, IDF = {idf_t:.4f}")
 
         tf_idf[term] = {}
-        
-        for doc, tf_t_d in docs.items():  # Iterate correctly over document dictionary
-            w_t_d = tf_t_d * idf_t  # Compute TF-IDF weight
+        for doc, tf_t_d in docs.items():
+            w_t_d = tf_t_d * idf_t
             tf_idf[term][doc] = w_t_d
-            
             if cos_norm:
-                if doc not in doc_norms:
-                    doc_norms[doc] = 0
-                doc_norms[doc] += w_t_d ** 2  # Sum squared weights for normalization
-            
-            if verbose >= 2:
-                print(f'Processed {term} in doc {doc}: TF-IDF = {w_t_d}')
+                doc_norms[doc] = doc_norms.get(doc, 0) + w_t_d ** 2
+            if verbose >= 4:
+                print(f"[construct_tf_idf][L4] Term '{term}' in doc '{doc}': TF = {tf_t_d}, Weight = {w_t_d:.4f}")
 
-    # Apply cosine normalization if enabled
     if cos_norm:
         for doc in doc_norms:
             doc_norms[doc] = math.sqrt(doc_norms[doc])
+            if verbose >= 3:
+                print(f"[construct_tf_idf][L3] Document '{doc}': Norm = {doc_norms[doc]:.4f}")
 
     return tf_idf, idf, doc_norms
 
 
-def retrieveDocuments(query, inv_idx, idf, doc_norms, dw_mode, qw_mode, cos_norm=True, verbose=0):
+def retrieveDocuments(query, inv_idx, idf, doc_norms, dw_mode, qw_mode, cos_norm=False, verbose=0):
     """Retrieve relevant documents for a given query using cosine similarity."""
-    tokens = preprocess(query, query, verbose)  # Tokenize & preprocess query
+    if verbose >= 2:
+        print(f"[retrieveDocuments][L2] Retrieving documents for query: {query.strip()}")
+    
+    tokens = preprocess(query, 'query', verbose if verbose >= 4 else 0)
+    if verbose >= 3:
+        print(f"[retrieveDocuments][L3] Query tokenized into {len(tokens)} tokens: {tokens}")
+    
     results = {}
 
-    if dw_mode == 'tf.idf' and qw_mode == 'tf.idf':  # Fixed '&' to 'and'
-        q_vec = {}  # Query vector
+    if dw_mode == 'tf.idf' and qw_mode == 'tf.idf':
+        q_vec = {}
         similarity_scores = {}
 
-        # Compute query TF-IDF vector
         for token in tokens:
-            tf = 1  # Assume binary term frequency (each token appears once in query)
-            idf_t = idf.get(token, 0)  # Get IDF (default to 0 if token is unseen)
-            q_weight = tf * idf_t  # Compute TF-IDF for query term
+            tf_val = 1  # Binary term frequency assumed.
+            idf_t = idf.get(token, 0)
+            q_weight = tf_val * idf_t
             q_vec[token] = q_weight
-
-            # Accumulate similarity scores for documents containing the token
+            if verbose >= 4:
+                print(f"[retrieveDocuments][L4] Query token '{token}': TF = {tf_val}, IDF = {idf_t:.4f}, weight = {q_weight:.4f}")
             if token in inv_idx:
                 for doc, d_weight in inv_idx[token].items():
-                    if doc not in similarity_scores:
-                        similarity_scores[doc] = 0
-                    similarity_scores[doc] += q_weight * d_weight  # Dot product
+                    similarity_scores[doc] = similarity_scores.get(doc, 0) + q_weight * d_weight
+                    if verbose >= 4:
+                        print(f"[retrieveDocuments][L4] Accumulated for doc '{doc}': token '{token}', d_weight = {d_weight:.4f}, cumulative score = {similarity_scores[doc]:.4f}")
 
         if cos_norm:
-            # Compute query norm
             query_norm = math.sqrt(sum(val**2 for val in q_vec.values()))
-
-            # Normalize similarity scores
+            if verbose >= 3:
+                print(f"[retrieveDocuments][L3] Query norm = {query_norm:.4f}")
             for doc_id in similarity_scores:
-                if doc_norms[doc_id] > 0 and query_norm > 0:  # Avoid division by zero
+                if doc_norms.get(doc_id, 0) > 0 and query_norm > 0:
                     similarity_scores[doc_id] /= (query_norm * doc_norms[doc_id])
+                    if verbose >= 4:
+                        print(f"[retrieveDocuments][L4] Doc '{doc_id}': Normalized score = {similarity_scores[doc_id]:.4f}")
 
-        # Sort results by similarity score
         results = sorted(similarity_scores.items(), key=lambda x: x[1], reverse=True)
+        if verbose >= 3:
+            print(f"[retrieveDocuments][L3] Retrieval complete. {len(results)} documents found.")
 
     return results
 
 
-
 def main():
-    """main/driver function."""
-
-    # ==================================================
+    """Main/driver function."""
     # STEP ONE: PARSE CLI
+    if len(sys.argv) < 6:
+        print("USAGE: vectorspace.py DOC_WEIGHT_MODE QUERY_WEIGHT_MODE COSINE_NORM(T/F) DOCUMENT_DIR TEST_QUERY_FILE (VERBOSE(1/2/3/4))")
+        raise ValueError(f"Expected at least 5 arguments, got {len(sys.argv)}.")
 
-    # check for sufficient arguments
-    if (len(sys.argv) < 6):
-        print('USAGE: vectorspace.py DOC_WEIGHT_MODE QUERY_WEIGHT_MODE COSINE_NORM(T/F) DOCUMENT_DIR TEST_QUERY_FILE (VERBOSE(0/1/2))')
-        raise ValueError(f"Expected at least {5} arguments, got {len(sys.argv)}.")
+    # L1 messages: High-level summaries.
+    verbose = 1
+    if len(sys.argv) == 7:
+        verbose = max(int(sys.argv[6]), 1)
+    if len(sys.argv) > 7:
+        print("USAGE: vectorspace.py DOC_WEIGHT_MODE QUERY_WEIGHT_MODE COSINE_NORM(T/F) DOCUMENT_DIR TEST_QUERY_FILE (VERBOSE(1/2/3/4))")
+        raise ValueError(f"Expected at most 6 arguments, got {len(sys.argv)}.")
 
-    # argument 6: verbose flag
-    verbose = 0
-    if (len(sys.argv) == 7):
-        verbose = max(sys.argv[6],2)
-
-    # check for extra arguments
-    if (len(sys.argv) > 7):
-        print('USAGE: vectorspace.py DOC_WEIGHT_MODE QUERY_WEIGHT_MODE COSINE_NORM(T/F) DOCUMENT_DIR TEST_QUERY_FILE (VERBOSE(0/1/2))')
-        raise ValueError(f"Expected at most {6} arguments, got {len(sys.argv)}.")
-    
-    # argument 1: weighting scheme for documents
     dw_mode = sys.argv[1]
-    doc_weights = None
-    if (dw_mode == 'tf.idf'):
-        # tf.idf weighting scheme
-        if (verbose):
-            print('tf.idf document weighting scheme selected.')
-        doc_weights = dict()
+    if dw_mode == 'tf.idf':
+        print("[main][L1] tf.idf document weighting scheme selected.")
     else:
-        # custom weighting scheme
-        if (verbose):
-            print('Custom document weighting scheme selected.')
-        doc_weights = list()
+        print("[main][L1] Custom document weighting scheme selected.")
 
-    # argument 2: weighting scheme for documents
     qw_mode = sys.argv[2]
-    query_weights = None
-    if (qw_mode == 'tf.idf'):
-        # tf.idf weighting scheme
-        if (verbose):
-            print('tf.idf query weighting scheme selected.')
-        query_weights = dict()
+    if qw_mode == 'tf.idf':
+        print("[main][L1] tf.idf query weighting scheme selected.")
     else:
-        # custom weighting scheme
-        if (verbose):
-            print('Custom query weighting scheme selected.')
-        query_weights = list()
+        print("[main][L1] Custom query weighting scheme selected.")
 
-    # argument 3: cosine normalizaiton
     cos_norm = None
-    if (sys.argv[3] == 'T' | sys.argv[3] == 'True'):
-        if (verbose):
-            print('cosine normalization enabled')
+    if sys.argv[3] in ('T', 'True'):
         cos_norm = True
-    elif (sys.argv[3] == 'F' | sys.argv[3] == 'False'):
-        if (verbose):
-            print('cosine normalization disabled')
+        print("[main][L1] Cosine normalization enabled.")
+    elif sys.argv[3] in ('F', 'False'):
         cos_norm = False
+        print("[main][L1] Cosine normalization disabled.")
     else:
-        raise(ValueError(f'unknown COSINE_NORM option: {sys.argv[3]} [expected: T/True OR F/False]'))
+        raise ValueError(f"Unknown COSINE_NORM option: {sys.argv[3]} [expected: T/True OR F/False]")
     
-    # argument 4: document directory
     doc_dir_path = Path(sys.argv[4])
     if not doc_dir_path.is_dir():
-        FileNotFoundError(f'The directory {sys.argv[4]} does not exist.')
-    elif (verbose):
-        print('document directory found successfully.')
+        raise FileNotFoundError(f"The directory {sys.argv[4]} does not exist.")
+    else:
+        print("[main][L1] Document directory found successfully.")
 
-    # argument 5: test query file
     test_query_filepath = Path(sys.argv[5])
     if not test_query_filepath.is_file():
-        FileNotFoundError(f'The file {sys.argv[5]} does not exist.')
-    elif (verbose):
-        print('test query file found successfully.')
+        raise FileNotFoundError(f"The file {sys.argv[5]} does not exist.")
+    else:
+        print("[main][L1] Test query file found successfully.")
 
-    # ==================================================
-    # STEP TWO: TBA
+    # STEP TWO: READ DOCUMENTS
+    filepaths = list(doc_dir_path.iterdir())
+    print(f"[main][L1] Found {len(filepaths)} files in document directory.")
+    inv_idx = {}
+
+    # STEP THREE: INDEX FILES
+    for file in filepaths:
+        indexDocument(file, dw_mode, qw_mode, inv_idx, verbose)
+    print(f"[main][L1] Indexing complete. Vocabulary size = {len(inv_idx)}")
+
+    # STEP FOUR: CALCULATE WEIGHTS
+    if dw_mode == 'tf.idf':
+        inv_idx, idf, doc_norms = construct_tf_idf(inv_idx, len(filepaths), cos_norm, verbose)
+    print(f"[main][L1] Scoring complete. Vocabulary size = {len(inv_idx)}")
+    
+    output_filepath = Path(f"cranfield.{dw_mode}.{qw_mode}.{int(cos_norm)}.output")
+
+    # STEP FIVE: PROCESS QUERIES AND RETRIEVE DOCUMENTS
+    with open(test_query_filepath, "r", encoding="ISO-8859-1") as query_file, \
+         open(output_filepath, "w", encoding="ISO-8859-1") as output_file:
+        for line in query_file:
+            parts = line.split(maxsplit=1)
+            query_id = int(parts[0])
+            query = parts[1]
+            if verbose >= 2:
+                print(f"[main][L2] Processing query {query_id}: {query.strip()}")
+            results = retrieveDocuments(query, inv_idx, idf, doc_norms, dw_mode, qw_mode, cos_norm, verbose)
+            for doc_id, score in results:
+                output_file.write(f"{query_id} {doc_id} {round(score, 2)}\n")
+            if verbose >= 2:
+                print(f"[main][L2] Query {query_id}: Retrieved {len(results)} documents.")
+
+    print(f"[main][L1] Output written to {output_filepath}")
 
 
 if __name__ == "__main__":
