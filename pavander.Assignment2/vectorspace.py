@@ -16,7 +16,7 @@ STOP_WORDS = set(get_stopwords("en"))
 STEMMER = PorterStemmer()
 
 def preprocess(text, doc_id = None, verbose = 0):
-    """clean, tokenize, filter, and stem raw text."""
+    """Clean, tokenize, filter, and stem raw text."""
     tokens_unfiltered = tokenizeText(text)
     if (verbose >= 2):
         print(f'tokenized {doc_id}')
@@ -43,7 +43,7 @@ def tf_idf(tokens, inv_idx, doc_id, verbose = 0):
 
 
 def indexDocument(doc_id, dw_mode, qw_mode, inv_idx, verbose = 0):
-    """adds a document to the inverted index."""
+    """Add a document to the inverted index."""
     # ==================================================
     # STEP ONE: open file
     doc_path = Path(doc_id)
@@ -70,8 +70,24 @@ def indexDocument(doc_id, dw_mode, qw_mode, inv_idx, verbose = 0):
     return inv_idx
 
 
-def retrieveDocuments(query, inv_idx, dw_mode, qw_mode):
+def retrieveDocuments(query, inv_idx, dw_mode, qw_mode, verbose = 0):
+    """Retrieve information from the index for a given query."""
+    tokens = preprocess(query, query, verbose)
     results = dict()
+
+    if (dw_mode == 'tf.idf' & qw_mode == 'tf.idf'):
+        docs = dict()
+
+        for token in tokens:
+            if token in inv_idx:
+                for doc, freq in inv_idx[token]:
+                    if doc in docs:
+                        docs[doc] += freq
+                    else:
+                        docs[doc] = freq
+
+        results = docs
+
     return results
 
 
