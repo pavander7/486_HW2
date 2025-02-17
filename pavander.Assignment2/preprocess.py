@@ -14,12 +14,13 @@ def removeSGML(text):
 def tokenizeText(text):
     """Tokenizes text, including removing SGML text and expanding contractions."""
     text = removeSGML(text)
+    text = text.casefold()
     text = fix(text)
     
     # Regular expression for tokenizing
     pattern = r"""
-        \b\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b       # Dates (e.g., 01/31/2024, 2024-01-31)
-        |\b(?:[A-Za-z]+\.){2,}                    # Acronyms (e.g., U.S.A., E.U.)
+        \b\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b        # Dates (e.g., 01/31/2024, 2024-01-31)
+        |\b(?:[A-Za-z]+\.){2,}                     # Acronyms (e.g., U.S.A., E.U.)
         |\b\w+(?:-\w+)+\b                          # Hyphenated words (e.g., mother-in-law)
         |\b\w+\b                                   # Words
         |\d+(?:,\d{3})*(?:\.\d+)?\b                # Numbers with commas/decimals (e.g., 1,000.50)
