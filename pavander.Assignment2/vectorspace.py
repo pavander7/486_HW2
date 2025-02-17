@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 # Third-party imports
+import numpy as np
 from stopwords import get_stopwords
 
 # Local application/library specific imports
@@ -32,7 +33,7 @@ def preprocess(text, doc_id = None, verbose = 0):
     return tokens
 
 
-def tf_idf(tokens, inv_idx, doc_id, verbose = 0):
+def add_tf_idf(tokens, inv_idx, doc_id, verbose = 0):
     for token in tokens:
         if token in inv_idx:
             inv_idx[token][doc_id] += 1
@@ -59,15 +60,30 @@ def indexDocument(doc_id, dw_mode, qw_mode, inv_idx, verbose = 0):
 
         tokens = preprocess(doc_text_raw, doc_id, verbose)
         
-    
     # ==================================================
     # STEP THREE: add tokens to inverted index
     if (dw_mode == 'tf.idf'):
-        inv_idx = tf_idf(tokens, inv_idx, doc_id, verbose)
+        inv_idx = add_tf_idf(tokens, inv_idx, doc_id, verbose)
     else:
         raise(ValueError(f'unimplemented mode(s): d: {dw_mode} q: {qw_mode}'))
 
     return inv_idx
+
+
+def construct_tf_idf(inv_idx, N, verbose = 0):
+    tf_idf = dict()
+    for term, docs in inv_idx:
+        df_t = len(docs)
+        idf_t = np.log10(N/df_t)
+        print(f'processed {term}: {idf_t}')
+        tf_idf[term] = dict()
+        for doc in docs:
+            tf_t_d = inv_idx[term][doc]
+            w_t_d = tf_t_d * idf_t
+            tf_idf[term][doc] = w_t_d
+            if (verbose >= 2):
+                print(f'processed {term}: {doc} = {w_t_d}')
+    return tf_idf
 
 
 def retrieveDocuments(query, inv_idx, dw_mode, qw_mode, verbose = 0):
