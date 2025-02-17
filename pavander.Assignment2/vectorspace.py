@@ -2,6 +2,7 @@
 
 # Standard library imports
 import sys
+import math
 from pathlib import Path
 
 # Third-party imports
@@ -70,41 +71,78 @@ def indexDocument(doc_id, dw_mode, qw_mode, inv_idx, verbose = 0):
     return inv_idx
 
 
-def construct_tf_idf(inv_idx, N, verbose = 0):
-    tf_idf = dict()
-    for term, docs in inv_idx:
+def construct_tf_idf(inv_idx, N, cos_norm=True, verbose=0):
+    tf_idf = {}
+    idf = {}
+    doc_norms = {}
+
+    for term, docs in inv_idx.items():  # Iterate correctly over dictionary
         df_t = len(docs)
-        idf_t = np.log10(N/df_t)
-        print(f'processed {term}: {idf_t}')
-        tf_idf[term] = dict()
-        for doc in docs:
-            tf_t_d = inv_idx[term][doc]
-            w_t_d = tf_t_d * idf_t
+        idf_t = np.log10(N / df_t)  # Compute IDF
+        idf[term] = idf_t
+        
+        if verbose >= 1:
+            print(f'Processed {term}: IDF = {idf_t}')
+
+        tf_idf[term] = {}
+        
+        for doc, tf_t_d in docs.items():  # Iterate correctly over document dictionary
+            w_t_d = tf_t_d * idf_t  # Compute TF-IDF weight
             tf_idf[term][doc] = w_t_d
-            if (verbose >= 2):
-                print(f'processed {term}: {doc} = {w_t_d}')
-    return tf_idf
+            
+            if cos_norm:
+                if doc not in doc_norms:
+                    doc_norms[doc] = 0
+                doc_norms[doc] += w_t_d ** 2  # Sum squared weights for normalization
+            
+            if verbose >= 2:
+                print(f'Processed {term} in doc {doc}: TF-IDF = {w_t_d}')
+
+    # Apply cosine normalization if enabled
+    if cos_norm:
+        for doc in doc_norms:
+            doc_norms[doc] = math.sqrt(doc_norms[doc])
+
+    return tf_idf, idf, doc_norms
 
 
-def retrieveDocuments(query, inv_idx, dw_mode, qw_mode, verbose = 0):
-    """Retrieve information from the index for a given query."""
-    tokens = preprocess(query, query, verbose)
-    results = dict()
+def retrieveDocuments(query, inv_idx, idf, doc_norms, dw_mode, qw_mode, cos_norm=True, verbose=0):
+    """Retrieve relevant documents for a given query using cosine similarity."""
+    tokens = preprocess(query, query, verbose)  # Tokenize & preprocess query
+    results = {}
 
-    if (dw_mode == 'tf.idf' & qw_mode == 'tf.idf'):
-        docs = dict()
+    if dw_mode == 'tf.idf' and qw_mode == 'tf.idf':  # Fixed '&' to 'and'
+        q_vec = {}  # Query vector
+        similarity_scores = {}
 
+        # Compute query TF-IDF vector
         for token in tokens:
-            if token in inv_idx:
-                for doc, freq in inv_idx[token]:
-                    if doc in docs:
-                        docs[doc] += freq
-                    else:
-                        docs[doc] = freq
+            tf = 1  # Assume binary term frequency (each token appears once in query)
+            idf_t = idf.get(token, 0)  # Get IDF (default to 0 if token is unseen)
+            q_weight = tf * idf_t  # Compute TF-IDF for query term
+            q_vec[token] = q_weight
 
-        results = docs
+            # Accumulate similarity scores for documents containing the token
+            if token in inv_idx:
+                for doc, d_weight in inv_idx[token].items():
+                    if doc not in similarity_scores:
+                        similarity_scores[doc] = 0
+                    similarity_scores[doc] += q_weight * d_weight  # Dot product
+
+        if cos_norm:
+            # Compute query norm
+            query_norm = math.sqrt(sum(val**2 for val in q_vec.values()))
+
+            # Normalize similarity scores
+            for doc_id in similarity_scores:
+                if doc_norms[doc_id] > 0 and query_norm > 0:  # Avoid division by zero
+                    similarity_scores[doc_id] /= (query_norm * doc_norms[doc_id])
+
+        # Sort results by similarity score
+        results = sorted(similarity_scores.items(), key=lambda x: x[1], reverse=True)
 
     return results
+
 
 
 def main():
