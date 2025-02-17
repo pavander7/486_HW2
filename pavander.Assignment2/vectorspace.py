@@ -174,36 +174,38 @@ def main():
     """Main/driver function."""
     # STEP ONE: PARSE CLI
     if len(sys.argv) < 6:
-        print("USAGE: vectorspace.py DOC_WEIGHT_MODE QUERY_WEIGHT_MODE COSINE_NORM(T/F) DOCUMENT_DIR TEST_QUERY_FILE (VERBOSE(1/2/3/4))")
+        print("USAGE: vectorspace.py DOC_WEIGHT_MODE QUERY_WEIGHT_MODE COSINE_NORM(T/F) DOCUMENT_DIR TEST_QUERY_FILE (VERBOSE(0/1/2/3/4))")
         raise ValueError(f"Expected at least 5 arguments, got {len(sys.argv)}.")
 
-    # L1 messages: High-level summaries.
-    verbose = 1
+    # Determine verbose level (0 disables all verbose output)
+    verbose = 0
     if len(sys.argv) == 7:
-        verbose = max(int(sys.argv[6]), 1)
+        verbose = int(sys.argv[6])
     if len(sys.argv) > 7:
-        print("USAGE: vectorspace.py DOC_WEIGHT_MODE QUERY_WEIGHT_MODE COSINE_NORM(T/F) DOCUMENT_DIR TEST_QUERY_FILE (VERBOSE(1/2/3/4))")
+        print("USAGE: vectorspace.py DOC_WEIGHT_MODE QUERY_WEIGHT_MODE COSINE_NORM(T/F) DOCUMENT_DIR TEST_QUERY_FILE (VERBOSE(0/1/2/3/4))")
         raise ValueError(f"Expected at most 6 arguments, got {len(sys.argv)}.")
 
-    dw_mode = sys.argv[1]
-    if dw_mode == 'tf.idf':
-        print("[main][L1] tf.idf document weighting scheme selected.")
-    else:
-        print("[main][L1] Custom document weighting scheme selected.")
+    # Only print L1 messages if verbose >= 1
+    if verbose >= 1:
+        if sys.argv[1] == 'tf.idf':
+            print("[main][L1] tf.idf document weighting scheme selected.")
+        else:
+            print("[main][L1] Custom document weighting scheme selected.")
 
-    qw_mode = sys.argv[2]
-    if qw_mode == 'tf.idf':
-        print("[main][L1] tf.idf query weighting scheme selected.")
-    else:
-        print("[main][L1] Custom query weighting scheme selected.")
+        if sys.argv[2] == 'tf.idf':
+            print("[main][L1] tf.idf query weighting scheme selected.")
+        else:
+            print("[main][L1] Custom query weighting scheme selected.")
 
     cos_norm = None
     if sys.argv[3] in ('T', 'True'):
         cos_norm = True
-        print("[main][L1] Cosine normalization enabled.")
+        if verbose >= 1:
+            print("[main][L1] Cosine normalization enabled.")
     elif sys.argv[3] in ('F', 'False'):
         cos_norm = False
-        print("[main][L1] Cosine normalization disabled.")
+        if verbose >= 1:
+            print("[main][L1] Cosine normalization disabled.")
     else:
         raise ValueError(f"Unknown COSINE_NORM option: {sys.argv[3]} [expected: T/True OR F/False]")
     
@@ -211,30 +213,35 @@ def main():
     if not doc_dir_path.is_dir():
         raise FileNotFoundError(f"The directory {sys.argv[4]} does not exist.")
     else:
-        print("[main][L1] Document directory found successfully.")
+        if verbose >= 1:
+            print("[main][L1] Document directory found successfully.")
 
     test_query_filepath = Path(sys.argv[5])
     if not test_query_filepath.is_file():
         raise FileNotFoundError(f"The file {sys.argv[5]} does not exist.")
     else:
-        print("[main][L1] Test query file found successfully.")
+        if verbose >= 1:
+            print("[main][L1] Test query file found successfully.")
 
     # STEP TWO: READ DOCUMENTS
     filepaths = list(doc_dir_path.iterdir())
-    print(f"[main][L1] Found {len(filepaths)} files in document directory.")
+    if verbose >= 1:
+        print(f"[main][L1] Found {len(filepaths)} files in document directory.")
     inv_idx = {}
 
     # STEP THREE: INDEX FILES
     for file in filepaths:
-        indexDocument(file, dw_mode, qw_mode, inv_idx, verbose)
-    print(f"[main][L1] Indexing complete. Vocabulary size = {len(inv_idx)}")
+        indexDocument(file, sys.argv[1], sys.argv[2], inv_idx, verbose)
+    if verbose >= 1:
+        print(f"[main][L1] Indexing complete. Vocabulary size = {len(inv_idx)}")
 
     # STEP FOUR: CALCULATE WEIGHTS
-    if dw_mode == 'tf.idf':
+    if sys.argv[1] == 'tf.idf':
         inv_idx, idf, doc_norms = construct_tf_idf(inv_idx, len(filepaths), cos_norm, verbose)
-    print(f"[main][L1] Scoring complete. Vocabulary size = {len(inv_idx)}")
+    if verbose >= 1:
+        print(f"[main][L1] Scoring complete. Vocabulary size = {len(inv_idx)}")
     
-    output_filepath = Path(f"cranfield.{dw_mode}.{qw_mode}.{int(cos_norm)}.output")
+    output_filepath = Path(f"cranfield.{sys.argv[1]}.{sys.argv[2]}.{int(cos_norm)}.output")
 
     # STEP FIVE: PROCESS QUERIES AND RETRIEVE DOCUMENTS
     with open(test_query_filepath, "r", encoding="ISO-8859-1") as query_file, \
@@ -245,13 +252,14 @@ def main():
             query = parts[1]
             if verbose >= 2:
                 print(f"[main][L2] Processing query {query_id}: {query.strip()}")
-            results = retrieveDocuments(query, inv_idx, idf, doc_norms, dw_mode, qw_mode, cos_norm, verbose)
+            results = retrieveDocuments(query, inv_idx, idf, doc_norms, sys.argv[1], sys.argv[2], cos_norm, verbose)
             for doc_id, score in results:
-                output_file.write(f"{query_id} {doc_id} {round(score, 2)}\n")
+                output_file.write(f"{query_id} {doc_id} {score}\n")
             if verbose >= 2:
                 print(f"[main][L2] Query {query_id}: Retrieved {len(results)} documents.")
 
-    print(f"[main][L1] Output written to {output_filepath}")
+    if verbose >= 1:
+        print(f"[main][L1] Output written to {output_filepath}")
 
 
 if __name__ == "__main__":
