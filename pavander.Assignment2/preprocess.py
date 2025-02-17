@@ -35,15 +35,14 @@ def tokenizeText(text):
         # Tokenize each line, prepending <start> token
         tokens = re.findall(pattern, line, re.VERBOSE)
         
-        # Add <start> token at the beginning of each line
-        line_tokens = ["<start>"] + tokens
-        
         # Process contractions and possessives
         final_tokens = []
-        for token in line_tokens:
+        for token in tokens:
             if token.endswith("'s"):
                 final_tokens.append(token[:-2])  # Remove 's'
                 final_tokens.append("'s")        # Keep possessive separately
+            else:
+                final_tokens.append(token)
 
         # Add processed tokens to the final list
         all_tokens.extend(final_tokens)
