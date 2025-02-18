@@ -119,12 +119,12 @@ def compute_query(query, idf, query_weighting, verbose=0):
     q_vec = {}
     for token, tf in tokens.items():
         idf_t = idf.get(token, 0)
-        q_vec[token] = idf_t
-        q_vec[token] = q_weight
+        q_weight = idf_t
         if query_weighting == 'tf.idf':
             q_weight *= tf
         elif query_weighting != 'bm25':
             raise ValueError("Unimplemented query weighting mode")
+        q_vec[token] = q_weight
         if verbose >= 4:
             print(f"[compute_query_tf_idf][L4] Query token 'IDF = {idf_t:.4f}, weight = {q_weight:.4f}")
     return q_vec
@@ -311,7 +311,7 @@ def main():
     
     # STEP FIVE: PROCESS QUERIES AND RETRIEVE DOCUMENTS
     # We'll store the evaluation results per query (if answers enabled).
-    eval_results = []  # list of tuples (query_id, cutoff, precision, recall)
+    eval_results = []  # list of output tuples
     with open(test_query_filepath, "r", encoding="ISO-8859-1") as query_file, \
          open(output_filepath, "w", encoding="ISO-8859-1") as output_file:
         for line in query_file:
@@ -344,7 +344,6 @@ def main():
         write_evaluation(answers_filepath, eval_results, header)
         if verbose >= 1:
             print(f"[main][L1] Answers evaluation output written to {answers_filepath}")
-
 
 
 if __name__ == "__main__":

@@ -1,0 +1,5 @@
+document_weighting: bm25, query_weighting: tf.idf, cos_norm: 1
+cutoff: 10 precision: 0.2129 recall: 0.3722
+cutoff: 50 precision: 0.0795 recall: 0.6133
+cutoff: 100 precision: 0.0480 recall: 0.7207
+cutoff: 500 precision: 0.0127 recall: 0.9006

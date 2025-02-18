@@ -1,5 +1,5 @@
 [main][L1] Cosine normalization enabled.
-[main][L1] tf.idf document weighting scheme selected.
+[main][L1] bm25 document weighting scheme selected.
 [main][L1] tf.idf query weighting scheme selected.
 [main][L1] Document directory found successfully.
 [main][L1] Test query file found successfully.
@@ -7,5 +7,5 @@
 [main][L1] Found 1400 files in document directory.
 [main][L1] Indexing complete. Vocabulary size = 9415
 [main][L1] Scoring complete. Vocabulary size = 9415
-[main][L1] Output written to cranfield.tf.idf.tf.idf.1.output
-[main][L1] Answers evaluation output written to cranfield.tf.idf.tf.idf.1.answers
+[main][L1] Output written to cranfield.bm25.tf.idf.1.output
+[main][L1] Answers evaluation output written to cranfield.bm25.tf.idf.1.answers
