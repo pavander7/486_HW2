@@ -7,6 +7,7 @@ from pathlib import Path
 
 # Third-party imports
 import numpy as np
+import nltk
 
 # Local application/library specific imports
 from preprocess import preprocess_and_tokenize, extract_docid, token_frequencies
@@ -31,7 +32,7 @@ def add_token(tokens, inv_idx, doc_id, verbose=0):
             print(f"[add_tf_idf][L4] Token '{token}' in doc '{doc_id}' count: {inv_idx[token][doc_id]}.")
 
 
-def indexDocument(doc_filepath, document_weighting, query_weighting, inv_idx, doc_lengths = None, verbose=0):
+def indexDocument(doc_filepath, document_weighting, query_weighting, inv_idx, tokenizer, doc_lengths = None, verbose=0):
     """Add a document to the inverted index."""
     doc_path = Path(doc_filepath)
     doc_id = extract_docid(doc_path.name)
@@ -47,7 +48,7 @@ def indexDocument(doc_filepath, document_weighting, query_weighting, inv_idx, do
         doc_text_raw = doc.read()
         if verbose >= 4:
             print(f"[indexDocument][L4] Read {len(doc_text_raw)} characters from '{doc_id}'.")
-        tokens = preprocess_and_tokenize(doc_text_raw, doc_id, verbose)
+        tokens = preprocess_and_tokenize(doc_text_raw, doc_id, tokenizer, verbose)
         if verbose >= 3:
             print(f"[indexDocument][L3] Preprocessing complete for '{doc_id}'; {len(tokens)} tokens obtained.")
         
@@ -130,12 +131,12 @@ def compute_query(query, idf, query_weighting, verbose=0):
     return q_vec
 
 
-def retrieveDocuments(query, index, idf, doc_norms, query_weighting, cos_norm=False, verbose=0):
+def retrieveDocuments(query, index, idf, doc_norms, query_weighting, tokenizer, cos_norm=False, verbose=0):
     """Retrieve relevant documents for a given query using cosine similarity."""
     if verbose >= 2:
         print(f"[retrieveDocuments][L2] Retrieving documents for query: {query.strip()}")
     
-    tokens = preprocess_and_tokenize(query, 'query', verbose if verbose >= 4 else 0)
+    tokens = preprocess_and_tokenize(query, 'query', tokenizer, verbose)
     if verbose >= 3:
         print(f"[retrieveDocuments][L3] Query tokenized into {len(tokens)} tokens: {tokens}")
     
@@ -179,13 +180,14 @@ def main():
     # STEP ONE: PARSE CLI
     # Check help flag
     if len(sys.argv) >= 2 and sys.argv[1] in ('H', 'h', '-h', '-H', 'help', 'Help', 'HELP', '--help', '--Help', '--HELP'):
-        print("USAGE: vectorspace.py DOC_WEIGHTING QUERY_WEIGHTING COSINE_NORM DOCUMENT_DIR TEST_QUERY_FILE ANSWERS [RELJUDGE_FILE] (VERBOSE)")
+        print("USAGE: vectorspace.py DOC_WEIGHTING QUERY_WEIGHTING COSINE_NORM DOCUMENT_DIR TEST_QUERY_FILE TOKENIZER ANSWERS [RELJUDGE_FILE] (VERBOSE)")
         print(
             "\tDOC_WEIGHTING MODE: tf.idf, bm25\n" +
             "\tQUERY_WEIGHTING MODE: tf.idf, bm25\n" +
             "\tCOSINE_NORM: T/True/TRUE/true/1 OR F/False/FALSE/false/0\n" +
             "\tDOCUMENT_DIR: Directory containing documents\n" +
             "\tTEST_QUERY_FILE: File containing test queries\n" +
+            "\tTOKENIZER: regex, nltk\n" +
             "\tANSWERS: Enable answers evaluation (T/True/TRUE/true/1) or disable (F/False/FALSE/false/0)\n" +
             "\tRELJUDGE_FILE: (Required if ANSWERS enabled) File with relevance judgments\n" +
             "\tVERBOSE: (optional) Verbosity level (default 0)\n"
@@ -194,14 +196,14 @@ def main():
     
     # We need at least 7 arguments if answers is disabled, and 8 if enabled.
     # argv[0] is the script name.
-    min_args_without_answers = 7  # indices 0..6: 6 arguments plus script name.
-    min_args_with_answers = 8
+    min_args_without_answers = 8  # indices 0..6: 6 arguments plus script name.
+    min_args_with_answers = 9
 
     # Determine if answers evaluation is enabled.
     # We'll assume the argument order:
     # [1] document_weighting, [2] query_weighting, [3] cos_norm, [4] doc_dir, [5] test_query_file, [6] answers, [7] (reljudge_file if answers enabled) , [optional 8] verbose
     if len(sys.argv) < min_args_without_answers:
-        print("USAGE: vectorspace.py DOC_WEIGHTING QUERY_WEIGHTING COSINE_NORM DOCUMENT_DIR TEST_QUERY_FILE ANSWERS [RELJUDGE_FILE] (VERBOSE)")
+        print("USAGE: vectorspace.py DOC_WEIGHTING QUERY_WEIGHTING COSINE_NORM DOCUMENT_DIR TEST_QUERY_FILE TOKENIZER ANSWERS [RELJUDGE_FILE] (VERBOSE)")
         raise ValueError(f"Expected at least 6 arguments, got {len(sys.argv)-1}.")
     
     # Take in args
@@ -209,22 +211,23 @@ def main():
     query_weighting = sys.argv[2]
     doc_dir_path = Path(sys.argv[4])
     test_query_filepath = Path(sys.argv[5])
+    tokenizer = sys.argv[6]
 
     # Determine verbose level.
     verbose = 0
     # If answers is enabled, then we expect an extra argument for reljudge_file, so the position of verbose changes.
-    if sys.argv[6] in ('T', 'True', 'TRUE', 'true', '1'):
+    if sys.argv[7] in ('T', 'True', 'TRUE', 'true', '1'):
         answers = True
         if len(sys.argv) < min_args_with_answers:
             raise ValueError("When answers is enabled, a reljudge_file must be provided.")
-        reljudge_filepath_str = sys.argv[7]
-        if len(sys.argv) >= 9:
-            verbose = int(sys.argv[8])
-    elif sys.argv[6] in ('F', 'False', 'FALSE', 'false', '0'):
+        reljudge_filepath_str = sys.argv[8]
+        if len(sys.argv) >= 10:
+            verbose = int(sys.argv[9])
+    elif sys.argv[7] in ('F', 'False', 'FALSE', 'false', '0'):
         answers = False
-        if len(sys.argv) >= 8:
+        if len(sys.argv) >= 9:
             # If answers disabled, then verbose might be at position 7.
-            verbose = int(sys.argv[7])
+            verbose = int(sys.argv[8])
     else:
         raise ValueError("Unknown ANSWERS option. Expected T/True/TRUE/true/1 or F/False/FALSE/false/0")
 
@@ -272,6 +275,16 @@ def main():
         if verbose >= 1:
             print("[main][L1] Test query file found successfully.")
 
+    # Validate tokenizer
+    if tokenizer == 'regex':
+        if verbose >= 1:
+            print("[main][L1] regex tokenizer selected.")
+    elif tokenizer == 'nltk':
+        if verbose >= 1:
+            print("[main][L1] nltk tokenizer selected.")
+    else:
+        raise ValueError(f"Unknown tokenizer {query_weighting} selected.")
+
     # If answers is enabled, load the relevance judgments.
     if answers:
         reljudge_filepath = Path(reljudge_filepath_str)
@@ -293,7 +306,7 @@ def main():
     inv_idx = {}
     doc_lengths = {}
     for file in filepaths:
-        indexDocument(file, document_weighting, query_weighting, inv_idx, doc_lengths, verbose)
+        indexDocument(file, document_weighting, query_weighting, inv_idx, tokenizer, doc_lengths, verbose)
     if verbose >= 1:
         print(f"[main][L1] Indexing complete. Vocabulary size = {len(inv_idx)}")
 
@@ -322,7 +335,7 @@ def main():
             query = parts[1].strip()
             if verbose >= 2:
                 print(f"[main][L2] Processing query {query_id}: {query}")
-            results = retrieveDocuments(query, index, idf, doc_norms, query_weighting, cos_norm, verbose)
+            results = retrieveDocuments(query, index, idf, doc_norms, query_weighting, tokenizer, cos_norm, verbose)
             for doc_id, score in results:
                 output_file.write(f"{query_id} {doc_id} {score}\n")
             if verbose >= 2:
